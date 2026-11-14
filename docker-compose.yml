@@ -1,0 +1,32 @@
+services:
+  sto-pp2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sto-pp2-app
+    restart: unless-stopped
+    ports:
+      # Format: "HOST_PORT:CONTAINER_PORT". If port 8000 is blocked, change APP_PORT in .env
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/backend/data/sto.db}
+      - SECRET_KEY=${SECRET_KEY:-sto-pp2-production-secret-key-replace-me-123456}
+      - TOKEN_HOURS=${TOKEN_HOURS:-12}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-10}
+      - SEED_DEMO=${SEED_DEMO:-1}
+      - APP_NAME=${APP_NAME:-WMS}
+      - APP_SUBTITLE=${APP_SUBTITLE:-Warehouse Management System}
+      - LOG_FILE=/app/backend/data/app_errors.log
+    volumes:
+      # Persistent SQLite database and logs
+      - sto-pp2-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  sto-pp2-data:
+    driver: local

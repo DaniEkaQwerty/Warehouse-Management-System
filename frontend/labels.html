@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cetak Label QR Lokator</title>
+  <style>
+    :root { --ink:#111827; --line:#d1d5db; --brand:#1f4fd8; }
+    * { box-sizing:border-box; }
+    body { font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; margin:0; color:var(--ink); background:#f3f4f6; }
+    header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:12px 16px; display:flex; gap:12px; align-items:end; flex-wrap:wrap; z-index:2; }
+    header h1 { font-size:16px; margin:0 12px 0 0; }
+    .field { display:flex; flex-direction:column; gap:4px; font-size:12px; }
+    .field label { font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; }
+    select,input { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+    button { padding:9px 16px; border:0; border-radius:8px; background:var(--brand); color:#fff; font-weight:700; cursor:pointer; }
+    button.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); }
+    #status { margin-left:auto; font-size:13px; color:#6b7280; }
+    #sheet { padding:18px; display:grid; gap:10px; }
+    .label { background:#fff; border:1px dashed #9ca3af; border-radius:8px; padding:8px; display:flex; gap:10px; align-items:center; break-inside:avoid; }
+    .label .qr svg { display:block; width:var(--qr,84px); height:var(--qr,84px); }
+    .label .txt { min-width:0; }
+    .label .code { font-size:20px; font-weight:800; letter-spacing:.02em; }
+    .label .wh { font-size:12px; color:#6b7280; }
+    .label .zone { font-size:11px; color:#9ca3af; }
+    @media print {
+      header { display:none; }
+      body { background:#fff; }
+      #sheet { padding:0; gap:6px; grid-template-columns:repeat(3,1fr); }
+      .label { border:1px solid #ddd; }
+    }
+    @media (min-width:640px) { #sheet { grid-template-columns:repeat(3,1fr); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Cetak Label QR Lokator</h1>
+    <div class="field"><label>Gudang</label><select id="wh"></select></div>
+    <div class="field"><label>Filter Kode</label><input id="code" placeholder="mis. A-01"></div>
+    <div class="field"><label>Ukuran QR</label><select id="size"><option value="72">Kecil</option><option value="84" selected>Sedang</option><option value="110">Besar</option></select></div>
+    <button id="load" class="ghost">Muat</button>
+    <button id="print">Cetak / Simpan PDF</button>
+    <span id="status"></span>
+  </header>
+  <div id="sheet"></div>
+
+  <script src="/vendor/qrcode.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script>
+    const $ = (s, el = document) => el.querySelector(s);
+    const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const qs = (o) => { const p = new URLSearchParams(); Object.entries(o).forEach(([k, v]) => { if (v !== "" && v != null) p.set(k, v); }); const s = p.toString(); return s ? "?" + s : ""; };
+
+    const status = (t) => { $("#status").textContent = t || ""; };
+
+    function qrSvg(text, size) {
+      const qr = qrcode(0, "M");
+      qr.addData(text);
+      qr.make();
+      return qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+    }
+
+    async function loadWarehouses() {
+      try {
+        const r = await api("/warehouses?size=200");
+        const sel = $("#wh");
+        sel.innerHTML = `<option value="">Semua gudang</option>` + r.items.map((w) => `<option value="${w.id}">${esc(w.code)} — ${esc(w.name)}</option>`).join("");
+        const pre = new URLSearchParams(location.search).get("warehouse_id");
+        if (pre) sel.value = pre;
+      } catch (e) { status("Gagal memuat gudang: " + e.message); }
+    }
+
+    async function load() {
+      const sheet = $("#sheet");
+      sheet.innerHTML = `<div style="color:#6b7280;">Memuat…</div>`;
+      const size = +$("#size").value;
+      document.documentElement.style.setProperty("--qr", size + "px");
+      try {
+        const r = await api("/locators" + qs({ warehouse_id: $("#wh").value, q: $("#code").value.trim(), size: 1000 }));
+        const items = r.items || [];
+        status(items.length + " lokator");
+        if (!items.length) { sheet.innerHTML = `<div style="color:#6b7280;">Tidak ada lokator.</div>`; return; }
+        sheet.innerHTML = items.map((l) => `
+          <div class="label">
+            <div class="qr">${qrSvg(l.code, size)}</div>
+            <div class="txt">
+              <div class="code">${esc(l.code)}</div>
+              <div class="wh">${esc(l.warehouse_code || "")}</div>
+              <div class="zone">${esc([l.zone, l.rack, l.level].filter(Boolean).join(" · "))}</div>
+            </div>
+          </div>`).join("");
+      } catch (e) {
+        sheet.innerHTML = `<div style="color:#b91c1c;">Gagal: ${esc(e.message)}</div>`;
+      }
+    }
+
+    if (!Session.token) {
+      document.body.innerHTML = `<div style="padding:40px;text-align:center;">Anda harus login terlebih dahulu. <a href="/">Kembali ke aplikasi</a></div>`;
+    } else {
+      loadWarehouses().then(() => { const c = new URLSearchParams(location.search).get("code"); if (c) $("#code").value = c; load(); });
+      $("#load").onclick = load;
+      $("#wh").onchange = load;
+      $("#print").onclick = () => window.print();
+    }
+  </script>
+</body>
+</html>
