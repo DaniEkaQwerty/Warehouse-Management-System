@@ -211,6 +211,12 @@ textarea.input { padding: 10px 12px; min-height: 80px; resize: vertical; }
 .stat.warn .v { color: var(--warning); } .stat.bad .v { color: var(--error); } .stat.ok .v { color: var(--success); }
 .sec-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 6px 0 -4px; }
 
+.seg { display: flex; gap: 6px; background: #e9edf3; border-radius: 12px; padding: 4px; }
+.seg button { flex: 1; border: 0; background: transparent; padding: 10px 8px; border-radius: 9px; font: inherit; font-weight: 700; font-size: 14px; color: var(--muted); cursor: pointer; }
+.seg button.active { background: #fff; color: var(--accent); box-shadow: 0 1px 3px rgba(15, 23, 42, .14); }
+.card.msg { border-left: 4px solid var(--border-strong); }
+.card.msg.unread { border-left-color: var(--accent); background: var(--accent-soft); }
+
 .loc-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 68px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; border-left-width: 5px; }
 .loc-item:active { background: var(--surface-2); }
 .loc-item .code { font-size: 20px; font-weight: 800; letter-spacing: -.01em; }

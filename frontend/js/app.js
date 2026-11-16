@@ -46,6 +46,7 @@ const App = {
 
     try {
       if (clean === "#/m") await Mobile.renderHome(this.root);
+      else if (clean === "#/m/scan") await Mobile.renderScan(this.root);
       else if (clean === "#/m/stock") await Mobile.renderStock(this.root);
       else if (clean === "#/m/inbound") await Mobile.renderMovement(this.root, "INBOUND");
       else if (clean === "#/m/outbound") await Mobile.renderMovement(this.root, "OUTBOUND");
@@ -67,6 +68,7 @@ const App = {
       else if (clean === "#/d/items") await Desktop.renderItems(this.root);
       else if (clean === "#/d/imports") await Desktop.renderImports(this.root);
       else if (clean === "#/d/reports") await Desktop.renderReports(this.root);
+      else if (clean === "#/d/messages") await Desktop.renderMessages(this.root);
       else if (clean === "#/d/users") await Desktop.renderUsers(this.root);
       else if (clean === "#/d/audit") await Desktop.renderAudit(this.root);
       else this.navigate("#/m");

@@ -34,7 +34,8 @@ Prototype WMS/
 │   │       ├── imports.py        # /api/imports (ITEM/WAREHOUSE/LOCATOR/USER)
 │   │       ├── reports.py        # /api/reports (7 laporan), /api/audit/actions
 │   │       ├── sto.py            # /api/sto: STO lifecycle + rekonsiliasi (Fase 2)
-│   │       └── sto_mobile.py     # /api/m/sto: counting MH + sync offline (Fase 2)
+│   │       ├── sto_mobile.py     # /api/m/sto: counting MH + sync offline (Fase 2)
+│   │       └── messages.py       # /api/messages (manajer) + /api/m/messages (inbox operator)
 │   ├── tests/
 │   │   └── test_flow.py          # E2E test suite
 │   └── requirements.txt
@@ -45,8 +46,8 @@ Prototype WMS/
 │   │   ├── ui.js                 # Toast, sheet, keypad qty, DataTable, badge
 │   │   ├── store.js              # IndexedDB cache + antrean offline (movement + counting STO)
 │   │   ├── scanner.js            # QR scanner (BarcodeDetector / jsQR)
-│   │   ├── mobile.js             # Layar MH: Home, Stok, Masuk, Keluar, Pindah, Opname, Sync, Me
-│   │   ├── desktop.js            # Console: dashboard, movements, stok, STO, koreksi, problems, master, import, laporan, audit
+│   │   ├── mobile.js             # Layar MH (3 tab): Beranda (pesan+tugas), Scan (masuk/keluar/pindah), Akun
+│   │   ├── desktop.js            # Console: dashboard, movements, stok, STO, pesan, koreksi, problems, master, import, laporan, audit
 │   │   └── app.js                # Router hash, login, deteksi role & perangkat
 │   ├── vendor/
 │   │   ├── jsQR.js               # QR decoder (fallback)
@@ -73,6 +74,7 @@ Saldo **tidak** disimpan statis. Saldo per (gudang, item, lokator) = `SUM(masuk)
 - `stock_movements` (**ledger**): `movement_no` (`MV-YYYY-000001`), `movement_type` (`INBOUND`/`OUTBOUND`/`TRANSFER`/`ADJUSTMENT`), `qty` (selalu positif), `from_locator_id`, `to_locator_id`, `ref_type` (`PO`/`SURAT_JALAN`/`DO`/`LAINNYA`), `ref_no`, `notes`, `created_by`, `device_id`, `client_txn_id` (**UNIQUE**, idempotensi), `voided`, `voided_by`, `voided_at`, `void_reason`, `corrects_movement_id`.
 - `sync_transactions`: jurnal sync offline (`result`: `OK`/`DUPLICATE`/`REJECTED`).
 - `audit_logs`: seluruh aktivitas penting.
+- **Pesan (messages)**: `messages` (`sender_id`, `title`, `body`, `level` `INFO`/`WARN`/`URGENT`, `target_role` `MH`/`CHECKER`/`SUPERVISOR`/`ALL`, `active`) + `message_reads` (tanda sudah dibaca per pengguna).
 - **Stock Opname (Fase 2)**: `stock_opnames`, `sto_assignments`, `sto_locators`, `stock_counts`, `stock_count_details`, `stock_recounts`. Rekonsiliasi **tidak** disimpan — dihitung on-the-fly dari ledger.
 
 ---
@@ -94,19 +96,24 @@ Saldo **tidak** disimpan statis. Saldo per (gudang, item, lokator) = `SUM(masuk)
 | **ADMIN** | Penuh: user, gudang, lokator + generator + label QR, master item, import, audit log, kelola STO |
 | **SUPERVISOR** | Dashboard read-only, daftar movement/stok, laporan, **kelola STO** (buat, penugasan, transisi status) |
 | **CHECKER** | Semua akses Supervisor + detail/filter + **koreksi** (void/adjust; wajib alasan, tercatat audit) + **verifikasi STO & selesaikan selisih** |
-| **MH** | Antarmuka **mobile** saja: masuk, keluar, pindah, stok, **hitung fisik opname**, sync |
+| **MH** | Antarmuka **mobile** saja (3 tab: Beranda/Scan/Akun): masuk, keluar, pindah, cek stok, **hitung fisik opname**, baca pesan, sync |
 
 ---
 
 ## 5. Alur Utama
 
 ### A. Barang Masuk / Keluar / Transfer (MH, mobile)
-1. Login di ponsel → otomatis masuk tampilan Mobile.
-2. Pilih gudang.
-3. **MASUK**: pilih item → lokator tujuan → qty → ref.
-4. **KELUAR**: pilih item → lokator asal (tampil saldo) → qty → ref.
-5. **PINDAH**: pilih item → lokator asal & tujuan (berbeda) → qty.
-6. Bila offline, transaksi masuk antrean IndexedDB; saat online otomatis tersinkron (`/api/m/sync`), idempoten via `client_txn_id`.
+1. Login di ponsel → otomatis masuk **Beranda** (`#/m`) dengan navigasi 3 tab: **Beranda / Scan / Akun**.
+2. Beranda menampilkan **pesan** dari manajer + **tugas** (STO) + statistik hari ini.
+3. Buka tab **Scan** → pilih **Masuk / Keluar / Pindah**.
+4. **MASUK**: pilih item → lokator tujuan → qty → ref.
+5. **KELUAR**: pilih item → lokator asal (tampil saldo) → qty → ref.
+6. **PINDAH**: pilih item → lokator asal & tujuan (berbeda) → qty.
+7. Bila offline, transaksi masuk antrean IndexedDB; saat online otomatis tersinkron (`/api/m/sync`), idempoten via `client_txn_id`.
+
+### A2. Pesan Operator
+1. **Manajer** (Admin/Supervisor/Checker) membuka **Pesan Operator** (`#/d/messages`) di desktop → **Tulis Pesan** (penerima + level + isi).
+2. **MH** melihat pesan di **Beranda**; belum dibaca disorot. Ketuk untuk membaca → ditandai `read` (`POST /api/m/messages/{id}/read`).
 
 ### B. Koreksi (Checker, desktop)
 1. Buka **Movements** atau **Corrections**.
@@ -196,6 +203,7 @@ Kata sandi: **`demo1234`**
 9. **Laporan**: 6 laporan untuk Supervisor; `audit_log` hanya Admin; ekspor XLSX/CSV/PDF.
 10. **Master**: gudang, generator lokator, import master.
 11. **Stock Opname (Fase 2)**: MH tidak boleh buat STO (403); alur OPEN→COUNTING; hitung MATCH + VARIANCE; idempotensi baris hitung; finish→accept; MH resolve selisih → 403; Checker resolve → ADJUSTMENT (saldo selaras, issues 0); transisi RECONCILIATION→COMPLETED.
+12. **Pesan**: MH tidak boleh kirim (403); level tak dikenal → 422; kirim oleh Supervisor OK; muncul di inbox `/api/m/messages` + `/api/m/home` (unread); tandai baca menurunkan unread; daftar manajer menghitung `reads`; hapus → hilang dari inbox.
 
 ---
 
@@ -203,5 +211,6 @@ Kata sandi: **`demo1234`**
 
 - **Fase 1**: tanpa integrasi ERP.
 - **Fase 2**: Stock Opname aktif — cek fisik dibanding **saldo ledger** (bukan ERP). Counter = **MH**; selisih diselesaikan **Checker** via **ADJUSTMENT**.
+- **Fase 3 (UI mobile)**: antarmuka MH disederhanakan jadi 3 tab (**Beranda / Scan / Akun**) + modul **Pesan Operator** (manajer → operator lapangan).
 - **Kamera QR**: butuh secure context (`https://` atau `localhost`). Di LAN HTTP gunakan pencarian manual / scanner Bluetooth.
 - **Backend relasional**: SQLite (default) untuk zero-setup; gunakan MySQL untuk deployment besar.

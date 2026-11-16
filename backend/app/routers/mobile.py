@@ -10,6 +10,8 @@ from ..core import audit, current_user, fail, require
 from ..database import get_db
 from ..models import (Item, ItemWarehouse, Locator, StockMovement, SyncTransaction, User, Warehouse, now)
 from ..services import stock as svc
+from .messages import inbox
+from .sto_mobile import my_sto_tasks
 
 router = APIRouter(prefix="/api/m", tags=["mobile"])
 FIELD = Depends(require("MH", "CHECKER", "SUPERVISOR"))
@@ -49,8 +51,11 @@ def home(warehouse_id: int | None = None, db: Session = Depends(get_db), user: U
         if warehouse_id:
             q = q.where(StockMovement.warehouse_id == warehouse_id)
         counts[mtype.lower()] = svc.num(db.scalar(q) or 0)
+    msgs = inbox(db, user, limit=50)
     return {"warehouses": _warehouses(db), "counts": counts,
-            "recent": [svc.movement_dict(m) for m in recent], "server_time": now().isoformat()}
+            "recent": [svc.movement_dict(m) for m in recent], "server_time": now().isoformat(),
+            "messages": msgs[:20], "unread": sum(1 for m in msgs if not m["read"]),
+            "tasks": my_sto_tasks(db, user)}
 
 
 @router.get("/bundle")

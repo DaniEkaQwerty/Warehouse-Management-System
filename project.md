@@ -74,7 +74,8 @@ Prototype WMS/
 │       │   ├── imports.py           # /api/imports: import master (ITEM/WAREHOUSE/LOCATOR/USER)
 │       │   ├── reports.py           # /api/reports/{7 laporan}, /api/audit/actions
 │       │   ├── sto.py               # /api/sto: STO lifecycle + rekonsiliasi (Fase 2)
-│       │   └── sto_mobile.py        # /api/m/sto: counting MH + sync offline (Fase 2)
+│       │   ├── sto_mobile.py        # /api/m/sto: counting MH + sync offline (Fase 2)
+│       │   └── messages.py          # /api/messages (manajer) + /api/m/messages (inbox operator)
 │       └── services/
 │           ├── stock.py             # SERVICE TUNGGAL: saldo, validasi, create_movement, void_movement
 │           ├── export.py            # generator XLSX/CSV/PDF (memakai config.APP_NAME)
@@ -94,8 +95,8 @@ Prototype WMS/
 │       ├── ui.js                    # komponen: toast, sheet, confirm, keypad qty, DataTable, badge
 │       ├── store.js                 # IndexedDB: bundle cache + antrean offline (movement + counting STO)
 │       ├── scanner.js               # scanner QR
-│       ├── mobile.js                # layar MH: home, stok, masuk, keluar, pindah, opname, sync, me
-│       ├── desktop.js               # console: dashboard, movements, stok, STO, koreksi, problems, master, import, laporan, audit
+│       ├── mobile.js                # layar MH (3 tab): Beranda (pesan+tugas), Scan (masuk/keluar/pindah), Akun (+hitung opname)
+│       ├── desktop.js               # console: dashboard, movements, stok, STO, pesan, koreksi, problems, master, import, laporan, audit
 │       └── app.js                   # router hash, login, deteksi role & perangkat
 ```
 
@@ -136,6 +137,9 @@ erDiagram
    - `voided`, `voided_by`, `voided_at`, `void_reason`, `corrects_movement_id`
 7. **`sync_transactions`**: jurnal sinkronisasi offline (`txn_id`, `user_id`, `device_id`, `txn_type`, `payload`, `result` ∈ {`OK`, `DUPLICATE`, `REJECTED`}, `message`).
 8. **`audit_logs`**: `action`, `object_type`, `object_id`, `old_value`, `new_value`, `username`, `ip`, `device`, `created_at`.
+9. **`messages`** + **`message_reads`** (Pesan operator): pengumuman/instruksi dari manajer ke operator lapangan.
+   - `messages`: `sender_id`, `title` (opsional), `body`, `level` ∈ {`INFO`, `WARN`, `URGENT`}, `target_role` ∈ {`MH`, `CHECKER`, `SUPERVISOR`, `ALL`}, `active`, `created_at`.
+   - `message_reads`: `message_id`, `user_id` (PK gabungan), `read_at` — tanda "sudah dibaca" per pengguna.
 
 ### Aktif di Fase 2 (Stock Opname)
 `stock_opnames`, `sto_assignments`, `sto_locators`, `stock_counts`, `stock_count_details`, `stock_recounts` + `services/counting.py` + `services/recon.py` + `routers/sto.py` + `routers/sto_mobile.py` (kedua router di-register di `main.py`).
@@ -195,11 +199,18 @@ Semua operasi stok melewati **satu service** agar aturan konsisten:
 - `POST /api/auth/login` → JWT (rate-limited). `POST /api/auth/logout`. `GET /api/auth/me`. `POST /api/auth/change-password`.
 
 ### Mobile MH (`/api/m`) — `FIELD = require("MH","CHECKER","SUPERVISOR")`
-- `GET /api/m/home` — kartu ringkas (counts + movement terbaru).
+- `GET /api/m/home` — kartu ringkas (counts + movement terbaru + **pesan terbaru + jumlah belum dibaca** + **tugas Stock Opname aktif**).
 - `GET /api/m/bundle?warehouse_id=` — bundle offline (gudang, lokator, item gudang terkait).
 - `GET /api/m/stock?warehouse_id=&q=` — daftar saldo.
 - `POST /api/m/inbound` / `/outbound` / `/transfer` — catat movement. Body memuat `client_txn_id` untuk idempotensi.
 - `POST /api/m/sync` — batch transaksi offline (diurutkan by timestamp), idempoten; yang gagal → `sync_transactions.result = REJECTED` + alasan.
+
+### Pesan (`/api`) — kirim = `MANAGER = require("SUPERVISOR")`, inbox = pengguna terautentikasi
+- `GET /api/m/messages` — inbox operator (pesan yang `target_role` cocok dengan role user atau `ALL`) + `unread`.
+- `POST /api/m/messages/{id}/read` — tandai pesan sudah dibaca.
+- `POST /api/messages` (**manajer**) — kirim pesan (body `title`, `body`, `level`, `target_role`).
+- `GET /api/messages?target_role=&page=&size=` (**manajer**) — daftar pesan terkirim + jumlah dibaca.
+- `DELETE /api/messages/{id}` (**manajer**) — non-aktifkan pesan (soft).
 
 ### Stock Opname Mobile (`/api/m/sto`) — `FIELD = require("MH","CHECKER","SUPERVISOR")`
 - `GET /api/m/sto` — STO aktif untuk user (`my_locators`, `my_todo`).
@@ -255,19 +266,27 @@ Semua operasi stok melewati **satu service** agar aturan konsisten:
 
 ## 8. Alur Pengalaman Pengguna (UX)
 
+> **UI Mobile MH disederhanakan menjadi 3 tab**: **Beranda** (`#/m`), **Scan** (`#/m/scan`), **Akun** (`#/m/me`).
+> Beranda = **pesan dari Admin/Supervisor/Checker + tugas** (Stock Opname aktif, ketuk untuk menghitung). Scan = satu alur transaksi dengan pemilih **Masuk / Keluar / Pindah**.
+
+### Alur 0: Beranda & Pesan (MH)
+1. MH login di ponsel → otomatis diarahkan ke **Beranda** (`#/m`).
+2. Beranda menampilkan banner sinkronisasi, pemilih gudang, **Pesan** (belum dibaca disorot; ketuk untuk baca → `POST /api/m/messages/{id}/read`), **Tugas Saya** (STO aktif → ketuk untuk hitung), statistik hari ini, aksi cepat, dan pergerakan terakhir.
+3. Manajer mengirim pesan dari desktop **Pesan Operator** (`#/d/messages`).
+
 ### Alur 1: Barang Masuk (MH)
-1. MH login di ponsel → otomatis diarahkan ke **Mobile** (`#/m`).
-2. Pilih gudang → tekan **MASUK**.
+1. MH login di ponsel → otomatis diarahkan ke **Beranda** (`#/m`).
+2. Pilih gudang → buka **Scan** (`#/m/scan`) → tab **Masuk**.
 3. Scan/ cari **item** → pilih **lokator tujuan** → input **qty** (keypad besar) → pilih **ref type/no** → catat.
 4. Bila offline: transaksi masuk **antrean** IndexedDB; banner menandai jumlah pending. Saat online → `POST /api/m/sync` otomatis.
 5. Saldo tersedia ditampilkan agar MH sadar konteks.
 
 ### Alur 2: Barang Keluar (MH)
-1. Pilih item → **lokator asal** (menampilkan saldo tersedia) → qty → ref.
+1. Buka **Scan** → tab **Keluar** → pilih item → **lokator asal** (menampilkan saldo tersedia) → qty → ref.
 2. Jika qty > saldo → ditolak dengan pesan saldo tersedia.
 
 ### Alur 3: Transfer antar Lokator (MH)
-1. Pilih item → **lokator asal** & **lokator tujuan** (wajib berbeda) → qty → catat.
+1. Buka **Scan** → tab **Pindah** → pilih item → **lokator asal** & **lokator tujuan** (wajib berbeda) → qty → catat.
 2. Validasi saldo asal; kedua lokator harus di gudang yang sama.
 
 ### Alur 4: Koreksi (Checker)
@@ -329,7 +348,16 @@ Stock Opname = **cek fisik dibanding saldo ledger** (bukan ERP). Rekonsiliasi di
 - **Rekonsiliasi** (`services/recon.py`): *expected* = saldo ledger per `(gudang, item, lokator)`; *physical* = hasil `StockCount` berstatus `FINAL` per lokator. Baris berstatus `MATCH` / `VARIANCE` / `UNEXPECTED` / `MISSING`.
 - **Resolusi selisih** (`resolve`): Checker membuat pergerakan **ADJUSTMENT** agar ledger = fisik (`to_locator` bila diff > 0, `from_locator` bila diff < 0; `ref_type = LAINNYA`). Setelah itu baris menjadi `MATCH` (terdeteksi otomatis).
 - **API**: `/api/sto` (kelola, monitor lokator, `reconciliation`, `reconciliation/resolve`) + `/api/m/sto` (counting MH + `sync` offline). Lihat §8.
-- **UI**: Mobile `#/m/opname` (daftar STO → lokator → layar hitung dengan keypad + scan/cari, finish/accept/recount). Desktop `#/d/sto` (daftar + buat STO, monitor lokator, tab rekonsiliasi + tombol "Selesaikan" selisih).
+- **UI**: Mobile `#/m/opname` (daftar STO → lokator → layar hitung dengan keypad + scan/cari, finish/accept/recount); juga dijangkau dari **Tugas Saya** di Beranda. Desktop `#/d/sto` (daftar + buat STO, monitor lokator, tab rekonsiliasi + tombol "Selesaikan" selisih).
+
+---
+
+## 12b. UI Mobile 3 Halaman + Pesan (AKTIF)
+
+- **Navigasi MH dipangkas jadi 3 tab**: **Beranda** (`#/m`), **Scan** (`#/m/scan`), **Akun** (`#/m/me`). Layar lain (hitung opname, cek stok, sync) diakses dari Beranda, bukan tab.
+- **Beranda** = pusat informasi: banner sinkronisasi, gudang aktif, **Pesan** (dari Admin/Supervisor/Checker, level `INFO`/`WARN`/`URGENT`, tandai baca), **Tugas Saya** (STO aktif), statistik hari ini, aksi cepat, pergerakan terakhir.
+- **Scan** = satu alur transaksi dengan pemilih **Masuk / Keluar / Pindah** (segmented control) memakai form movement yang sama; logika saldo/validasi identik dengan Fase 1.
+- **Pesan**: model `messages` + `message_reads`; router `messages.py` (kirim/list/hapus oleh `SUPERVISOR`; inbox + tandai-baca oleh operator). Manajer mengirim dari desktop **Pesan Operator** (`#/d/messages`). Seed menyertakan 2 pesan contoh.
 
 ---
 

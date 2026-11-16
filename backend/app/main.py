@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from . import config
 from .database import Base, SessionLocal, engine, ensure_schema_migrations
-from .routers import auth, imports, master, mobile, movements, reports, sto, sto_mobile
+from .routers import auth, imports, master, messages, mobile, movements, reports, sto, sto_mobile
 from .seed import seed
 
 # technical errors go to a log file for administrators, never to the end user
@@ -125,7 +125,7 @@ async def unhandled(request: Request, exc: Exception):
 
 
 for r in (auth.router, master.router, mobile.router, movements.router, imports.router, reports.router,
-          sto.router, sto_mobile.router):
+          sto.router, sto_mobile.router, messages.router):
     app.include_router(r)
 
 

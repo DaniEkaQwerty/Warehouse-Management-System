@@ -307,3 +307,30 @@ class SyncTransaction(Base):
     result: Mapped[str] = mapped_column(String(10))  # OK | REJECTED
     message: Mapped[str | None] = mapped_column(String(300))
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+# ---------------------------------------------------------------- messages
+MESSAGE_LEVELS = ["INFO", "WARN", "URGENT"]
+MESSAGE_TARGETS = ["MH", "CHECKER", "SUPERVISOR", "ALL"]
+
+
+class Message(Base):
+    """Announcement / instruction from a manager (Admin/Supervisor/Checker) to field operators."""
+    __tablename__ = "messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str | None] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text)
+    level: Mapped[str] = mapped_column(String(10), default="INFO")  # INFO | WARN | URGENT
+    target_role: Mapped[str] = mapped_column(String(20), default="MH", index=True)  # MH | CHECKER | SUPERVISOR | ALL
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    sender: Mapped["User | None"] = relationship(lazy="joined")
+
+
+class MessageRead(Base):
+    """Per-user read receipt for a message."""
+    __tablename__ = "message_reads"
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, default=now)

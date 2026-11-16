@@ -31,12 +31,9 @@ const Mobile = {
   renderBottomNav(active) {
     const pending = Store.pending.length;
     const tabs = [
-      { id: "home", label: "HOME", hash: "#/m", icon: "home" },
-      { id: "stock", label: "STOK", hash: "#/m/stock", icon: "box" },
-      { id: "opname", label: "OPNAME", hash: "#/m/opname", icon: "checkc" },
-      { id: "inbound", label: "MASUK", hash: "#/m/inbound", icon: "inbox" },
-      { id: "outbound", label: "KELUAR", hash: "#/m/outbound", icon: "outbox" },
-      { id: "transfer", label: "PINDAH", hash: "#/m/transfer", icon: "cmp" },
+      { id: "home", label: "BERANDA", hash: "#/m", icon: "home" },
+      { id: "scan", label: "SCAN", hash: "#/m/scan", icon: "scan" },
+      { id: "me", label: "AKUN", hash: "#/m/me", icon: "user" },
     ];
     return `<nav class="m-nav" aria-label="Navigasi Utama">
       ${tabs.map((t) => `<a href="${t.hash}" class="${active === t.id ? "active" : ""}">${icon(t.icon)}<span>${esc(t.label)}</span>${t.id === "home" && pending ? `<span class="dot">${pending}</span>` : ""}</a>`).join("")}
@@ -50,11 +47,11 @@ const Mobile = {
     if (!Store.warehouses.length || includeItems) await Store.loadBundle(warehouseId, { includeItems }).catch(() => {});
   },
 
-  /* -------------------------------------------------- HOME */
+  /* -------------------------------------------------- HOME (Beranda) */
   async renderHome(root) {
     await this.ensureBundle(this.warehouseId, true);
     this.initState();
-    root.innerHTML = `${this.topbar("WMS")}
+    root.innerHTML = `${this.topbar("Beranda")}
       <main class="m-page" id="m-content">${skeleton(3, 110)}</main>
       ${this.renderBottomNav("home")}`;
     this.wireTopbar(root);
@@ -65,22 +62,37 @@ const Mobile = {
       content.innerHTML = emptyState("wh", "Belum ada gudang", "Minta Admin menambahkan gudang terlebih dahulu.");
       return;
     }
-    let data = { counts: {}, recent: [] };
+    let data = { counts: {}, recent: [], messages: [], unread: 0, tasks: [] };
     try { data = await api("/m/home" + qs({ warehouse_id: this.warehouseId })); } catch (e) { /* offline */ }
+    const tasks = data.tasks || [];
+
     const c = data.counts || {};
+    const msgs = data.messages || [];
+    const unread = data.unread || 0;
     const pending = Store.pending.length, rejected = Store.rejected.length;
 
     content.innerHTML = `
-      <div class="field">
-        <label class="lbl">GUDANG AKTIF</label>
-        <select class="input" id="m-wh">${options(whs, this.warehouseId, "id", (w) => `${w.code} — ${w.name}`)}</select>
-      </div>
-
       ${(pending || rejected) ? `<div class="banner ${rejected ? "error" : "warn"}">
         ${icon(rejected ? "alert" : "wifioff")}
         <div class="grow"><b>${pending} transaksi menunggu sinkron</b><span>${rejected ? rejected + " ditolak server" : "Akan terkirim otomatis saat online."}</span></div>
         <a href="#/m/sync" class="btn sm">Lihat</a>
       </div>` : ""}
+
+      <div class="field"><label class="lbl">GUDANG AKTIF</label>
+        <select class="input" id="m-wh">${options(whs, this.warehouseId, "id", (w) => `${w.code} — ${w.name}`)}</select></div>
+
+      <div class="row between items-center"><div class="sec-title" style="margin:0;">Pesan</div>
+        ${unread ? `<span class="badge error" id="msg-unread">${unread} baru</span>` : ""}</div>
+      ${msgs.length ? msgs.slice(0, 4).map((m) => this.messageCard(m)).join("")
+        : emptyState("bell", "Belum ada pesan", "Pesan dari Admin, Supervisor, atau Checker akan tampil di sini.")}
+
+      <div class="sec-title">Tugas Saya</div>
+      ${tasks.length ? tasks.map((s) => `<button class="card block" data-sto="${s.id}" style="text-align:left;width:100%;">
+          <div class="row between"><b>${esc(s.sto_number)}</b>${stoBadge(s.status)}</div>
+          <div class="muted" style="font-size:13px;">${esc(s.warehouse_code)} · ${esc(fmtDate(s.sto_date))}</div>
+          <div class="row gap8 wrap mt8"><span class="badge info">${s.my_locators} lokator saya</span>
+            ${s.my_todo ? `<span class="badge warning">${s.my_todo} belum selesai</span>` : `<span class="badge success">semua selesai</span>`}</div>
+        </button>`).join("") : emptyState("checkc", "Tidak ada tugas", "Belum ada Stock Opname aktif untuk Anda.")}
 
       <div class="sec-title">Aktivitas Hari Ini</div>
       <div class="stat-grid">
@@ -91,17 +103,48 @@ const Mobile = {
 
       <div class="sec-title">Aksi Cepat</div>
       <div class="row gap8 wrap">
-        <a href="#/m/inbound" class="btn primary grow" style="justify-content:center;">${icon("inbox")} Barang Masuk</a>
-        <a href="#/m/outbound" class="btn grow" style="justify-content:center;">${icon("outbox")} Barang Keluar</a>
-        <a href="#/m/transfer" class="btn grow" style="justify-content:center;">${icon("cmp")} Transfer</a>
-        <a href="#/m/opname" class="btn grow" style="justify-content:center;">${icon("checkc")} Opname</a>
+        <a href="#/m/scan" class="btn primary grow" style="justify-content:center;">${icon("scan")} Transaksi Barang</a>
         <a href="#/m/stock" class="btn ghost grow" style="justify-content:center;">${icon("search")} Cek Stok</a>
       </div>
 
       <div class="sec-title">Pergerakan Terakhir Saya</div>
       ${(data.recent && data.recent.length) ? data.recent.map((m) => this.movementCard(m)).join("") : emptyState("clock", "Belum ada aktivitas", "Transaksi yang Anda buat akan tampil di sini.")}
     `;
+
     $("#m-wh", content).onchange = (e) => { this.setWarehouse(e.target.value); Store.loadBundle(this.warehouseId, { includeItems: true }).finally(() => this.renderHome(root)); };
+    $$("[data-sto]", content).forEach((b) => b.onclick = () => App.navigate("#/m/opname/" + b.dataset.sto));
+    $$("[data-msg]", content).forEach((b) => b.onclick = () => {
+      const m = msgs.find((x) => String(x.id) === b.dataset.msg);
+      if (!m) return;
+      this.openMessage(m, () => {
+        if (m.read) return;
+        m.read = true;
+        b.classList.remove("unread");
+        const ub = $("#msg-unread", content);
+        const n = msgs.filter((x) => !x.read).length;
+        if (ub) { if (n) ub.textContent = n + " baru"; else ub.remove(); }
+        api(`/m/messages/${m.id}/read`, { method: "POST" }).catch(() => {});
+      });
+    });
+  },
+
+  messageCard(m) {
+    return `<div class="card msg ${m.read ? "" : "unread"}" data-msg="${m.id}" style="padding:12px 14px;cursor:pointer;">
+      <div class="row between"><div class="row gap8 items-center">${msgBadge(m.level)}${m.read ? "" : '<span class="badge accent">Baru</span>'}</div><span class="muted" style="font-size:12px;">${fmtDate(m.created_at)}</span></div>
+      ${m.title ? `<div class="mt8"><b>${esc(m.title)}</b></div>` : ""}
+      <div class="muted" style="font-size:13px;">${esc(m.body.length > 110 ? m.body.slice(0, 110) + "…" : m.body)}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px;">— ${esc(m.sender || "Sistem")}</div>
+    </div>`;
+  },
+
+  openMessage(m, onRead) {
+    openSheet(`
+      <div class="row between items-center">${msgBadge(m.level)}<span class="muted" style="font-size:12px;">${fmtDate(m.created_at)}</span></div>
+      <h3 class="mt8">${esc(m.title || "Pesan")}</h3>
+      <p style="white-space:pre-wrap;">${esc(m.body)}</p>
+      <div class="muted" style="font-size:12px;">Dari: ${esc(m.sender || "Sistem")} · Untuk: ${esc(MESSAGE_TARGETS[m.target_role] || m.target_role)}</div>
+      <div class="actions"><button class="btn lg block primary" data-close="true">Tutup</button></div>`);
+    onRead && onRead();
   },
 
   movementCard(m) {
@@ -128,7 +171,7 @@ const Mobile = {
           <input class="input" id="m-q" placeholder="Ketik untuk mencari…" autocomplete="off"></div>
         <div id="m-stock-list">${skeleton(4, 64)}</div>
       </main>
-      ${this.renderBottomNav("stock")}`;
+      ${this.renderBottomNav("scan")}`;
     this.wireTopbar(root);
     const list = $("#m-stock-list", root);
     const load = async () => {
@@ -149,22 +192,45 @@ const Mobile = {
     load();
   },
 
-  /* -------------------------------------------------- MOVEMENTS */
+  /* -------------------------------------------------- MOVEMENTS (unified Scan) */
+  async renderScan(root) {
+    await this.ensureBundle(this.warehouseId, true);
+    this.initState();
+    this._scanType = this._scanType || "INBOUND";
+    root.innerHTML = `${this.topbar("Scan")}
+      <main class="m-page" id="m-content"></main>
+      ${this.renderBottomNav("scan")}`;
+    this.wireTopbar(root);
+    const content = $("#m-content", root);
+    const paint = () => {
+      content.innerHTML = `<div class="seg" id="mv-seg">
+          ${[["INBOUND", "Masuk"], ["OUTBOUND", "Keluar"], ["TRANSFER", "Pindah"]].map(([t, l]) => `<button type="button" data-t="${t}" class="${this._scanType === t ? "active" : ""}">${esc(l)}</button>`).join("")}
+        </div>
+        <div id="mv-host"></div>`;
+      $$("#mv-seg button", content).forEach((b) => b.onclick = () => { this._scanType = b.dataset.t; paint(); });
+      this.movementForm($("#mv-host", content), this._scanType, paint);
+    };
+    paint();
+  },
+
   async renderMovement(root, type) {
     await this.ensureBundle(this.warehouseId, true);
     this.initState();
+    const title = { INBOUND: "Barang Masuk", OUTBOUND: "Barang Keluar", TRANSFER: "Transfer" }[type] || "Transaksi";
+    root.innerHTML = `${this.topbar(title)}
+      <main class="m-page" id="m-content"></main>
+      ${this.renderBottomNav("scan")}`;
+    this.wireTopbar(root);
+    this.movementForm($("#m-content", root), type, null);
+  },
+
+  movementForm(content, type, onSwitch) {
     const meta = {
       INBOUND: { title: "Barang Masuk", sub: "Terima barang ke lokator", icon: "inbox" },
       OUTBOUND: { title: "Barang Keluar", sub: "Keluarkan barang dari lokator", icon: "outbox" },
       TRANSFER: { title: "Transfer", sub: "Pindahkan antar lokator", icon: "cmp" },
     }[type];
     const st = { item: null, from: null, to: null, qty: null, refType: "PO", refNo: "", notes: "" };
-
-    root.innerHTML = `${this.topbar(meta.title)}
-      <main class="m-page" id="m-content"></main>
-      ${this.renderBottomNav(type.toLowerCase())}`;
-    this.wireTopbar(root);
-    const content = $("#m-content", root);
 
     const render = async () => {
       const whs = Store.warehouses;
@@ -365,7 +431,7 @@ const Mobile = {
     await this.ensureBundle(this.warehouseId, false);
     root.innerHTML = `${this.topbar("Stock Opname")}
       <main class="m-page" id="m-content">${skeleton(3, 92)}</main>
-      ${this.renderBottomNav("opname")}`;
+      ${this.renderBottomNav("home")}`;
     this.wireTopbar(root);
     const content = $("#m-content", root);
     if (!Net.online) { content.innerHTML = emptyState("wifioff", "Butuh koneksi", "Daftar STO diambil dari server."); return; }
@@ -387,7 +453,7 @@ const Mobile = {
   async renderStoLocators(root, stoId) {
     root.innerHTML = `${this.topbar("Pilih Lokator", { back: "#/m/opname" })}
       <main class="m-page" id="m-content">${skeleton(4, 72)}</main>
-      ${this.renderBottomNav("opname")}`;
+      ${this.renderBottomNav("home")}`;
     this.wireTopbar(root, { onBack: () => App.navigate("#/m/opname") });
     const content = $("#m-content", root);
     try {
@@ -408,7 +474,7 @@ const Mobile = {
     root.innerHTML = `${this.topbar("Hitung Fisik", { back: "#/m/opname" })}
       <main class="m-page has-sticky" id="m-content">${skeleton(3, 80)}</main>
       <div class="m-sticky" id="m-sticky"></div>
-      ${this.renderBottomNav("opname")}`;
+      ${this.renderBottomNav("home")}`;
     this.wireTopbar(root, { onBack: () => App.navigate("#/m/opname") });
     const content = $("#m-content", root), sticky = $("#m-sticky", root);
     const load = async () => {
@@ -546,7 +612,7 @@ const Mobile = {
 
         <button class="btn block mt16" id="me-pw">${icon("cog")} Ubah Password</button>
         <button class="btn lg block danger mt8" id="me-logout">${icon("logout")} Logout</button>
-      </main>${this.renderBottomNav("home")}`;
+      </main>${this.renderBottomNav("me")}`;
     this.wireTopbar(root);
     $("#me-pw", root).onclick = () => this.changePassword();
     $("#me-logout", root).onclick = async () => {

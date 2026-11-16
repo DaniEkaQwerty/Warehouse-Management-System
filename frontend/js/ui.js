@@ -42,6 +42,8 @@ const ICONS = {
   print: '<path d="M7 8V3h10v5"/><rect x="4" y="8" width="16" height="8" rx="1.5"/><path d="M7 16h10v5H7z"/>',
   inbox: '<path d="M3 12l3-7h12l3 7v6a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><path d="M3 12h5l1 2h6l1-2h5"/>',
   outbox: '<path d="M3 13l2.5-7h13L21 13v5a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><path d="M12 3v8M9 8l3-3 3 3"/>',
+  bell: '<path d="M6 9a6 6 0 0112 0c0 4 1.5 5 2 6H4c.5-1 2-2 2-6z"/><path d="M10 19a2 2 0 004 0"/>',
+  send: '<path d="M4 12l16-8-6 16-3-7z"/>',
 };
 const icon = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
@@ -77,6 +79,15 @@ const RECON_STATUS = {
 };
 const stoBadge = (s, map = STO_STATUS) => {
   const [txt, c] = map[s] || [s, ""];
+  return `<span class="badge ${c}">${esc(txt)}</span>`;
+};
+
+/* ---------- messages ---------- */
+const MESSAGE_LEVELS = { INFO: ["Info", "info"], WARN: ["Penting", "warning"], URGENT: ["Urgent", "error"] };
+const MESSAGE_TARGETS = { MH: "Material Handling", CHECKER: "Checker", SUPERVISOR: "Supervisor", ALL: "Semua" };
+const msgLevel = (l) => MESSAGE_LEVELS[l] || MESSAGE_LEVELS.INFO;
+const msgBadge = (l) => {
+  const [txt, c] = msgLevel(l);
   return `<span class="badge ${c}">${esc(txt)}</span>`;
 };
 

@@ -1,5 +1,5 @@
 /* WMS Service Worker - App shell caching for warehouse offline usage */
-const CACHE_NAME = "wms-shell-v28";
+const CACHE_NAME = "wms-shell-v29";
 const ASSETS = [
   "/",
   "/index.html",

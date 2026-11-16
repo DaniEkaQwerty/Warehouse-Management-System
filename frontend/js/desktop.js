@@ -27,6 +27,7 @@ const Desktop = {
       { id: "movements", label: "Riwayat Stok", hash: "#/d/movements", icon: "repeat", show: canWide },
       { id: "stock", label: "Saldo Stok", hash: "#/d/stock", icon: "box", show: canWide },
       { id: "sto", label: "Stock Opname", hash: "#/d/sto", icon: "checkc", show: canWide },
+      { id: "messages", label: "Pesan Operator", hash: "#/d/messages", icon: "bell", show: canWide },
       { id: "corrections", label: "Koreksi", hash: "#/d/corrections", icon: "edit", show: canWide },
       { id: "problems", label: "Transaksi Bermasalah", hash: "#/d/problems", icon: "alert", show: canWide },
       { id: "warehouses", label: "Gudang", hash: "#/d/warehouses", icon: "wh", show: isAdmin },
@@ -846,5 +847,66 @@ const Desktop = {
     });
     content.appendChild(dt.el);
     dt.reload();
+  },
+
+  /* -------------------------------------------------- MESSAGES */
+  async renderMessages(root) {
+    const content = this.renderShell(root, "messages");
+    content.innerHTML = this.pageHead("Pesan Operator", "Kirim pengumuman / instruksi ke operator lapangan",
+      `<button class="btn primary sm" id="msg-new">${icon("send")} Tulis Pesan</button>`);
+    const filters = `<div class="field" style="margin:0;min-width:180px;"><select class="input" id="f-target" data-filter="target_role">
+      <option value="">Semua penerima</option>${Object.entries(MESSAGE_TARGETS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>`;
+    const dt = DataTable({
+      columns: [
+        { label: "Level", render: (r) => msgBadge(r.level) },
+        { label: "Penerima", render: (r) => esc(MESSAGE_TARGETS[r.target_role] || r.target_role) },
+        { label: "Judul / Isi", render: (r) => `<b>${esc(r.title || "(tanpa judul)")}</b><br><span class="muted" style="font-size:12px;">${esc((r.body || "").slice(0, 80))}${r.body && r.body.length > 80 ? "…" : ""}</span>` },
+        { label: "Pengirim", render: (r) => esc(r.sender || "—") },
+        { label: "Dibaca", align: "r", render: (r) => `<span class="num">${fmt(r.reads || 0)}</span>` },
+        { label: "Waktu", render: (r) => fmtDate(r.created_at) },
+        { label: "Aksi", render: (r) => `<button class="btn sm danger" data-del="${r.id}">${icon("trash")}</button>` },
+      ],
+      search: false, filters,
+      load: ({ page, size, target_role }) => api("/messages" + qs({ page, size, target_role })),
+    });
+    content.appendChild(dt.el);
+    dt.reload();
+    dt.el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-del]");
+      if (b) this.deleteMessage(+b.dataset.del, () => dt.reload());
+    });
+    $("#msg-new", content).onclick = () => this.messageForm(() => dt.reload());
+  },
+
+  messageForm(onDone) {
+    const s = openSheet(`
+      <h3 style="margin:0 0 12px;">Tulis Pesan</h3>
+      <div class="row gap8">
+        <div class="field grow"><label class="lbl">Penerima</label>
+          <select class="input" id="mf-target">${Object.entries(MESSAGE_TARGETS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+        <div class="field grow"><label class="lbl">Level</label>
+          <select class="input" id="mf-level">${Object.entries(MESSAGE_LEVELS).map(([k, v]) => `<option value="${k}">${esc(v[0])}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label class="lbl">Judul (opsional)</label><input class="input" id="mf-title" maxlength="120" placeholder="mis. Cek lokator sebelum simpan"></div>
+      <div class="field"><label class="lbl">Isi Pesan</label><textarea class="input" id="mf-body" rows="4" maxlength="2000" placeholder="Tulis instruksi…"></textarea></div>
+      <div class="actions"><button class="btn lg" data-close="true">Batal</button><button class="btn lg primary" id="mf-send">${icon("send")} Kirim</button></div>`,
+      { center: true });
+    $("#mf-send", s.el).onclick = (e) => busy(e.currentTarget, async () => {
+      const body = $("#mf-body", s.el).value.trim();
+      if (!body) { toast("Isi pesan wajib diisi.", "warn"); return; }
+      try {
+        await api("/messages", { method: "POST", body: {
+          target_role: $("#mf-target", s.el).value, level: $("#mf-level", s.el).value,
+          title: $("#mf-title", s.el).value.trim() || null, body } });
+        toast("Pesan terkirim.");
+        s.close(); onDone && onDone();
+      } catch (err) { toast(err.message, "error"); }
+    });
+  },
+
+  async deleteMessage(id, onDone) {
+    if (!(await confirmDialog({ title: "Hapus pesan?", body: "<p>Pesan akan disembunyikan dari operator.</p>", confirmText: "Hapus", danger: true }))) return;
+    try { await api(`/messages/${id}`, { method: "DELETE" }); toast("Pesan dihapus."); onDone && onDone(); }
+    catch (err) { toast(err.message, "error"); }
   },
 };

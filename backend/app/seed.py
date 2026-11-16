@@ -6,7 +6,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from .core import hash_password
-from .models import ROLES, Item, Locator, Role, User, UserRole, Warehouse
+from .models import ROLES, Item, Locator, Message, Role, User, UserRole, Warehouse
 from .services import stock as svc
 
 DEMO_PASSWORD = "demo1234"
@@ -105,4 +105,12 @@ def seed(db: Session):
     move("OUTBOUND", "L21", FG[1], 20, from_loc=l21[0], ref_type="DO", ref_no="DO-2026-0011")
     move("INBOUND", "L25", MAT[0], 200, to_loc=locs["L25"][0], ref_type="PO", ref_no="PO-2026-0003")
     move("INBOUND", "L25", MAT[1], 150, to_loc=locs["L25"][1], ref_type="PO", ref_no="PO-2026-0003")
+
+    # Demo announcements so the operator dashboard has messages from the start.
+    for title, body, level, target, sender in [
+        ("Selamat datang", "Gunakan menu Scan untuk transaksi barang masuk, keluar, dan pindah. "
+         "Pastikan lokator dan jumlah sesuai sebelum disimpan.", "INFO", "ALL", "admin"),
+        ("Ingat cek lokator", "Cocokkan kode lokator dengan label fisik sebelum menyimpan transaksi.", "WARN", "MH", "supervisor01"),
+    ]:
+        db.add(Message(sender_id=users[sender].id, title=title, body=body, level=level, target_role=target))
     db.commit()

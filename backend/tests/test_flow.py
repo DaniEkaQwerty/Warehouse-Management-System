@@ -193,6 +193,10 @@ def test_full_flow():
         assert c.post(f"/api/sto/{sto_id}/status", json={"status": "OPEN"}, headers=sup).status_code == 200
         assert c.post(f"/api/sto/{sto_id}/status", json={"status": "COUNTING"}, headers=sup).status_code == 200
 
+        # dashboard task list (used by the mobile Beranda) reflects the active assignment
+        home_tasks = c.get("/api/m/home", headers=mh).json()["tasks"]
+        assert any(t["id"] == sto_id and t["my_todo"] >= 1 for t in home_tasks)
+
         det = c.get(f"/api/m/sto/{sto_id}", headers=mh).json()
         assert len(det["locators"]) == 1
         slid = det["locators"][0]["id"]
@@ -223,6 +227,26 @@ def test_full_flow():
         assert c.post(f"/api/sto/{sto_id}/status", json={"status": "RECONCILIATION"}, headers=sup).status_code == 200
         assert c.post(f"/api/sto/{sto_id}/status", json={"status": "COMPLETED"}, headers=sup).status_code == 200
         assert c.get("/api/sto", headers=sup).json()["total"] >= 1
+
+        # --- Messages (manager -> operator) ---
+        assert c.get("/api/messages", headers=mh).status_code == 403
+        assert c.post("/api/messages", json={"body": "x"}, headers=mh).status_code == 403
+        assert c.post("/api/messages", json={"body": "x", "level": "NOPE"}, headers=sup).status_code == 422
+        r = c.post("/api/messages", json={"title": "Uji Pesan", "body": "Cek lokator sebelum simpan.",
+                                          "level": "WARN", "target_role": "MH"}, headers=sup)
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        inbox = c.get("/api/m/messages", headers=mh).json()
+        assert any(m["id"] == mid and not m["read"] for m in inbox["items"])
+        home = c.get("/api/m/home", headers=mh).json()
+        assert any(m["id"] == mid for m in home["messages"]) and home["unread"] >= 1
+        before_unread = c.get("/api/m/messages", headers=mh).json()["unread"]
+        assert c.post(f"/api/m/messages/{mid}/read", headers=mh).status_code == 200
+        assert c.get("/api/m/messages", headers=mh).json()["unread"] == before_unread - 1
+        listing = c.get("/api/messages", headers=sup).json()
+        assert listing["total"] >= 1 and listing["items"][0]["reads"] >= 1
+        assert c.delete(f"/api/messages/{mid}", headers=sup).status_code == 200
+        assert c.get("/api/m/messages", headers=mh).json()["items"] and not any(m["id"] == mid for m in c.get("/api/m/messages", headers=mh).json()["items"])
 
 
 if __name__ == "__main__":

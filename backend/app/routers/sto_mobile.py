@@ -39,6 +39,11 @@ def _sl_or_404(db: Session, user: User, slid: int) -> StoLocator:
 
 @router.get("")
 def list_sto(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return {"items": my_sto_tasks(db, user)}
+
+
+def my_sto_tasks(db: Session, user: User) -> list[dict]:
+    """Active STO assignments for the user (with per-locator todo counts). Reused by /api/m/home."""
     stmt = select(StockOpname).where(StockOpname.status.in_(["OPEN", "COUNTING", "CHECKING"]))
     mine = select(StoLocator.sto_id).where(StoLocator.counter_id == user.id)
     stmt = stmt.where((StockOpname.id.in_(mine)) | StockOpname.status.in_(["OPEN", "COUNTING", "CHECKING"]))
@@ -48,7 +53,7 @@ def list_sto(db: Session = Depends(get_db), user: User = Depends(current_user)):
         locs = _my_locators(db, user, s.id)
         todo = sum(1 for l in locs if l.status in ("NOT_STARTED", "IN_PROGRESS", "RECOUNT"))
         out.append({**sto_dict(db, s, detail=False), "my_locators": len(locs), "my_todo": todo})
-    return {"items": out}
+    return out
 
 
 @router.get("/{sto_id}")
