@@ -1,9 +1,9 @@
 services:
-  sto-pp2:
+  wms-prototype:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sto-pp2-app
+    container_name: wms-prototype
     restart: unless-stopped
     ports:
       # Format: "HOST_PORT:CONTAINER_PORT". If port 8000 is blocked, change APP_PORT in .env

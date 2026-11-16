@@ -1,11 +1,11 @@
-# PROJECT CONTEXT SPECIFICATION: WMS OPERASIONAL (FASE 1 + FASE 2)
+# PROJECT CONTEXT SPECIFICATION: WMS OPERASIONAL (FASE 1 + FASE 2 + FASE 3)
 > **Warehouse Management System (WMS) Operasional Harian**
 > **Prinsip Utama**: *"Saldo stok selalu dihitung dari ledger pergerakan, bukan disimpan statis."*
-> **Fokus**: Barang Masuk (Inbound), Barang Keluar (Outbound), Transfer antar Lokator, dan **Stock Opname (hitung fisik vs ledger)** — online maupun offline. Tanpa integrasi ERP.
+> **Fokus**: Barang Masuk (Inbound), Barang Keluar (Outbound), Transfer antar Lokator, **Stock Opname (hitung fisik vs ledger)**, dan **Pesan Operator** — online maupun offline. Tanpa integrasi ERP.
 
 Dokumen ini adalah **Single Source of Truth (SSOT)** arsitektur, skema database, aturan bisnis, endpoint API, dan desain teknis proyek. File ini dapat langsung diunggah/ditempel ke AI lain sebagai konteks lengkap tanpa mengunggah seluruh kode sumber.
 
-> Catatan Fase: Proyek ini pernah berupa aplikasi *Stock Opname (STO) + rekonsiliasi ERP*. **Fase 1** mengubahnya menjadi WMS operasional harian murni. **Fase 2** mengaktifkan kembali modul STO sebagai **cek fisik dibanding saldo ledger** (bukan ERP): MH (counter) menghitung di mobile, CHECKER memverifikasi, selisih diselesaikan lewat pergerakan ADJUSTMENT. Lihat §12.
+> Catatan Fase: Proyek ini pernah berupa aplikasi *Stock Opname (STO) + rekonsiliasi ERP*. **Fase 1** mengubahnya menjadi WMS operasional harian murni. **Fase 2** mengaktifkan kembali modul STO sebagai **cek fisik dibanding saldo ledger** (bukan ERP): MH (counter) menghitung di mobile, CHECKER memverifikasi, selisih diselesaikan lewat pergerakan ADJUSTMENT. **Fase 3** menyederhanakan UI mobile MH menjadi **3 halaman (Beranda / Scan / Akun)** dan menambahkan modul **Pesan Operator**. Lihat §12, §12b, dan §14 (Changelog & Guardrails).
 
 ---
 
@@ -41,7 +41,9 @@ Aplikasi ini adalah **WMS operasional harian** berbasis web, dioptimalkan untuk 
 - **Offline**: IndexedDB (`store.js`) untuk cache bundle master + antrean transaksi.
 
 ### Deployment
-- **Docker** multi-stage + **docker-compose** (port via `APP_PORT`).
+- **Docker** multi-stage + **docker-compose** (port host via `APP_PORT`, default `8000`).
+- `container_name` = **`sto-pp2-app-new`** (diubah dari `sto-pp2-app` agar tidak bentrok dengan container versi lama yang mungkin masih berjalan di host yang sama).
+- DB SQLite + log persisten di volume Docker `sto-pp2-data` (`/app/backend/data`). Seed demo aktif bila `SEED_DEMO=1`.
 
 ---
 
@@ -54,6 +56,8 @@ Prototype WMS/
 ├── .env.example
 ├── README.md
 ├── project.md                       # SSOT (file ini)
+├── diagrams.md                      # Diagram Mermaid: use case, ERD, sequence, state, activity, deployment
+├── diagrams.puml                    # Diagram PlantUML (padanan diagrams.md)
 ├── backend/
 │   ├── requirements.txt
 │   ├── tests/
@@ -334,7 +338,7 @@ Kata sandi default: **`demo1234`**
 | `mh01` | `MH` | Budi Material Handling | Mobile: masuk/keluar/pindah/sync |
 | `mh02` | `MH` | Dewi Material Handling | Mobile: masuk/keluar/pindah/sync |
 
-Gudang seed: **L21 (PP2 WH FG)**, **L22 (FG Hasbro)**, **L25 (Raw Material)** + lokator contoh + 8 movement contoh (inbound/transfer/outbound).
+Gudang seed: **L21 (PP2 WH FG)**, **L22 (FG Hasbro)**, **L25 (Raw Material)** + lokator contoh + 8 movement contoh (inbound/transfer/outbound) + **2 pesan contoh** (satu `target_role=ALL` level `INFO` dari admin, satu `target_role=MH` level `WARN` dari supervisor01).
 
 ---
 
@@ -352,7 +356,7 @@ Stock Opname = **cek fisik dibanding saldo ledger** (bukan ERP). Rekonsiliasi di
 
 ---
 
-## 12b. UI Mobile 3 Halaman + Pesan (AKTIF)
+## 12b. UI Mobile 3 Halaman + Pesan Operator (FASE 3, AKTIF)
 
 - **Navigasi MH dipangkas jadi 3 tab**: **Beranda** (`#/m`), **Scan** (`#/m/scan`), **Akun** (`#/m/me`). Layar lain (hitung opname, cek stok, sync) diakses dari Beranda, bukan tab.
 - **Beranda** = pusat informasi: banner sinkronisasi, gudang aktif, **Pesan** (dari Admin/Supervisor/Checker, level `INFO`/`WARN`/`URGENT`, tandai baca), **Tugas Saya** (STO aktif), statistik hari ini, aksi cepat, pergerakan terakhir.
@@ -364,12 +368,68 @@ Stock Opname = **cek fisik dibanding saldo ledger** (bukan ERP). Rekonsiliasi di
 ## 13. Panduan Prompt untuk AI Penerima
 
 ```text
-Halo AI, saya melampirkan dokumen arsitektur & spesifikasi teknis proyek "WMS Operasional (Fase 1 + Fase 2)" dalam Markdown di atas.
+Halo AI, saya melampirkan dokumen arsitektur & spesifikasi teknis proyek "WMS Operasional (Fase 1 + Fase 2 + Fase 3)" dalam Markdown di atas.
 
-Pahami arsitektur, skema database ledger-centric, aturan bisnis saldo, RBAC 4 peran, alur mobile offline, modul Stock Opname (fisik vs ledger), dan kontrak API. Saya ingin berdiskusi/meminta pengembangan fitur berdasarkan konteks ini.
+Pahami arsitektur, skema database ledger-centric, aturan bisnis saldo, RBAC 4 peran, alur mobile offline, modul Stock Opname (fisik vs ledger), UI mobile 3 halaman (Beranda/Scan/Akun), modul Pesan Operator, dan kontrak API. Saya ingin berdiskusi/meminta pengembangan fitur berdasarkan konteks ini.
 
 Konfirmasikan pemahaman Anda dengan ringkasan 3 pilar:
 1. Ledger `stock_movements` sebagai sumber tunggal saldo (anti-minus, append-only, koreksi via void/adjustment).
 2. Alur mobile offline idempoten (`client_txn_id` + `/api/m/sync`, `/api/m/sto/sync`) untuk MH (masuk/keluar/pindah + hitung opname).
-3. RBAC 4 peran (ADMIN/SUPERVISOR/CHECKER/MH) + Stock Opname sebagai cek fisik vs ledger (selisih diselesaikan via ADJUSTMENT).
+3. RBAC 4 peran (ADMIN/SUPERVISOR/CHECKER/MH) + Stock Opname sebagai cek fisik vs ledger (selisih diselesaikan via ADJUSTMENT) + Pesan Operator (manajer → operator lapangan).
+
+PENTING: Baca §14 (Changelog & Guardrails). Jangan mengubah konsep inti (ledger-centric, anti-minus, append-only, RBAC 4 peran, offline-first idempoten). Fase 3 hanya menyederhanakan UI mobile + menambah pesan; tidak mengubah aturan bisnis saldo/STO.
 ```
+
+---
+
+## 14. Changelog & Guardrails (FASE 3 — Perubahan Terakhir)
+
+> Bagian ini mencatat perubahan terakhir agar AI penerima **tidak melenceng dari konsep awal**. Konsep inti Fase 1 & Fase 2 tetap tidak berubah.
+
+### 14.1 Ringkasan Perubahan Fase 3 (yang baru dikerjakan)
+**Backend**
+- `models.py`: tambah `Message` (`sender_id`, `title`, `body`, `level` ∈ {`INFO`,`WARN`,`URGENT`}, `target_role` ∈ {`MH`,`CHECKER`,`SUPERVISOR`,`ALL`}, `active`, `created_at`) + `MessageRead` (`message_id`, `user_id` PK gabungan, `read_at`) + konstanta `MESSAGE_LEVELS`/`MESSAGE_TARGETS`.
+- `routers/messages.py` (BARU): `POST /api/messages`, `GET /api/messages`, `DELETE /api/messages/{id}` (manajer `SUPERVISOR`); `GET /api/m/messages`, `POST /api/m/messages/{id}/read` (operator). Helper `inbox(db, user)`.
+- `routers/mobile.py`: `GET /api/m/home` kini juga mengembalikan `messages`, `unread`, dan `tasks` (tugas STO aktif).
+- `routers/sto_mobile.py`: ekstrak helper `my_sto_tasks(db, user)` (dipakai `GET /api/m/sto` dan `/api/m/home`).
+- `main.py`: register router `messages`.
+- `seed.py`: tambah 2 pesan contoh.
+- `tests/test_flow.py`: blok uji pesan + asersi `home["tasks"]`.
+
+**Frontend**
+- `mobile.js`: nav MH dipangkas jadi **3 tab** (Beranda/Scan/Akun). `renderHome` baru = banner sinkron + gudang + **Pesan** (tandai baca) + **Tugas** + statistik + aksi cepat + pergerakan terakhir. `renderScan` BARU (segmented **Masuk/Keluar/Pindah**) memakai `movementForm(...)` hasil refactor dari `renderMovement`. Layar opname/stok/sync tetap ada (diakses dari Beranda).
+- `desktop.js`: nav + halaman **Pesan Operator** (`#/d/messages`): tulis/list/hapus; `renderMessages`, `messageForm`, `deleteMessage`.
+- `app.js`: route baru `#/m/scan`, `#/d/messages`.
+- `ui.js`: ikon `bell`/`send`, `MESSAGE_LEVELS`, `MESSAGE_TARGETS`, `msgLevel`, `msgBadge`.
+- `app.css`: `.seg` (segmented control), `.card.msg` (+`.unread`).
+- Cache PWA dinaikkan ke **v29** (`index.html` `?v=29`, `sw.js` `CACHE_NAME="wms-shell-v29"`).
+
+**Docker**
+- `docker-compose.yml`: `container_name` diubah menjadi **`sto-pp2-app-new`** (menghindari bentrok nama dengan container versi lama). Port host via `APP_PORT` (contoh lokal: `8010`).
+
+**Dokumentasi**: `README.md` + `project.md` diperbarui (Fase 3, UI 3 halaman, modul Pesan, skema `messages`/`message_reads`, endpoint, skenario uji #12).
+
+### 14.2 Hal yang TIDAK berubah (jangan diubah tanpa diminta)
+- **Ledger-centric**: saldo tetap dihitung dari `stock_movements`; tidak boleh menambah kolom saldo statis.
+- **Anti-minus & append-only**: aturan saldo, void, dan ADJUSTMENT tetap; koreksi tetap lewat void/adjustment (wajib alasan, tercatat audit).
+- **Idempotensi offline**: `client_txn_id` UNIQUE + `/api/m/sync` & `/api/m/sto/sync` tetap.
+- **RBAC 4 peran**: ADMIN/SUPERVISOR/CHECKER/MH tetap; `require()` (ADMIN = superuser) & `Session.hasExact()` tetap.
+- **STO**: alur status & rekonsiliasi on-the-fly (tanpa tabel rekonsiliasi tersimpan) tetap.
+- **Kontrak API Fase 1/2**: endpoint lama tidak dihapus; perubahan bersifat **aditif** (menambah field `messages`/`unread`/`tasks` pada `/api/m/home`, menambah route baru).
+
+### 14.3 Konvensi & Guardrail untuk AI berikutnya
+1. **Aditif, bukan destruktif**: pertahankan endpoint & perilaku lama; tambah fitur tanpa menghapus kontrak yang sudah ada.
+2. **Satu sumber kebenaran**: semua mutasi stok melalui `services/stock.py`; counting STO melalui `services/counting.py`; rekonsiliasi melalui `services/recon.py`.
+3. **Commit di pemanggil**: `create_movement`/service tidak `commit`; router yang `commit` (mendukung batch sync `begin_nested`).
+4. **UI Bahasa Indonesia**, tanpa hardcode nama perusahaan (pakai `APP_NAME`/`APP_SUBTITLE`).
+5. **MH = mobile saja**; manajer (Admin/Supervisor/Checker) = desktop console. Jangan pindahkan fitur manajerial ke mobile.
+6. **Tema mobile = 3 tab**; fitur kerja lapangan lain diakses dari **Beranda**, bukan menambah tab baru.
+7. **Bump cache PWA** (`?v=` di `index.html` + `CACHE_NAME` di `sw.js`) setiap mengubah file frontend.
+8. **Sertakan uji**: perubahan backend wajib menambah/menjaga `tests/test_flow.py` hijau; frontend lewat `node --check`.
+9. **Koreksi & audit**: jangan menambah penghapusan permanen baris ledger; gunakan void/adjustment.
+10. **Offline-first**: transaksi MH harus tetap bisa di-`enqueue` dan idempoten.
+
+### 14.4 Status Verifikasi Terakhir
+- `pytest -q` → **1 passed** (E2E: auth/RBAC, saldo, void, koreksi, sync, laporan, import, STO Fase 2, pesan Fase 3, tugas di `/api/m/home`).
+- `node --check` semua JS frontend → **OK**.
+- Smoke HTTP (Docker, port 8010) → `/api/health` `{"status":"ok"}`, `/api/auth/config` mengembalikan `app_name`; container **healthy**.

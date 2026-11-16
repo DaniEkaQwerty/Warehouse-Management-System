@@ -1,0 +1,465 @@
+@startuml WMS_UseCase
+' Diagram 1 — Use Case
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+actor ADMIN
+actor SUPERVISOR
+actor CHECKER
+actor MH
+
+rectangle "Sistem WMS Operasional" {
+  usecase "Login / Logout" as UC_LOGIN
+  usecase "Kelola Master\n(Gudang, Lokator, Item, User)" as UC_MASTER
+  usecase "Import Master Excel" as UC_IMPORT
+  usecase "Cetak Label QR Lokator" as UC_LABEL
+  usecase "Lihat Audit Log" as UC_AUDIT
+  usecase "Dashboard & Laporan" as UC_DASH
+  usecase "Riwayat Stok & Koreksi\n(void / ADJUSTMENT)" as UC_KOREKSI
+  usecase "Tangani Transaksi Bermasalah" as UC_PROBLEM
+  usecase "Kelola STO\n(buat, penugasan, status)" as UC_STO
+  usecase "Verifikasi STO &\nSelesaikan Selisih" as UC_VERIFY
+  usecase "Kirim Pesan Operator" as UC_MSG_SEND
+  usecase "Transaksi Barang\n(Masuk/Keluar/Pindah)" as UC_SCAN
+  usecase "Hitung Fisik Lokator" as UC_COUNT
+  usecase "Cek Stok" as UC_STOCK
+  usecase "Baca Pesan" as UC_MSG_READ
+  usecase "Sinkronisasi Offline" as UC_SYNC
+}
+
+ADMIN --> UC_LOGIN
+ADMIN --> UC_MASTER
+ADMIN --> UC_IMPORT
+ADMIN --> UC_LABEL
+ADMIN --> UC_AUDIT
+ADMIN --> UC_DASH
+ADMIN --> UC_STO
+ADMIN --> UC_KOREKSI
+ADMIN --> UC_MSG_SEND
+
+SUPERVISOR --> UC_LOGIN
+SUPERVISOR --> UC_DASH
+SUPERVISOR --> UC_STO
+SUPERVISOR --> UC_KOREKSI
+SUPERVISOR --> UC_MSG_SEND
+
+CHECKER --> UC_LOGIN
+CHECKER --> UC_KOREKSI
+CHECKER --> UC_PROBLEM
+CHECKER --> UC_VERIFY
+CHECKER --> UC_MSG_SEND
+
+MH --> UC_LOGIN
+MH --> UC_SCAN
+MH --> UC_COUNT
+MH --> UC_STOCK
+MH --> UC_MSG_READ
+MH --> UC_SYNC
+
+UC_SCAN ..> UC_SYNC : <<include>>
+UC_COUNT ..> UC_SYNC : <<include>>
+@enduml
+
+
+@startuml WMS_Component
+' Diagram 2 — Arsitektur / Komponen
+skinparam componentStyle rectangle
+
+package "Frontend (Vanilla JS, PWA)" {
+  [app.js\nrouter + login] as APP
+  [mobile.js\nMH: Beranda/Scan/Akun] as MOB
+  [desktop.js\nconsole manajer] as DESK
+  [store.js\nIndexedDB + antrean] as STORE
+  [ui.js\nkomponen + ikon] as UI
+  [api.js\nHTTP client] as APIJS
+}
+
+package "Backend (FastAPI)" {
+  [routers/*\nauth, master, mobile,\nmovements, imports, reports,\nsto, sto_mobile, messages] as ROUTERS
+  [services/*\nstock, counting, recon, export] as SERVICES
+  [core.py\nJWT, RBAC, audit, rate-limit] as CORE
+  [models.py\nSQLAlchemy 2.0] as MODELS
+}
+
+database "SQLite / MySQL\nledger stock_movements" as DB
+
+MOB --> APP
+DESK --> APP
+MOB --> STORE
+MOB --> UI
+DESK --> UI
+APP --> APIJS
+APIJS --> ROUTERS : REST /api
+ROUTERS --> SERVICES
+ROUTERS --> CORE
+SERVICES --> MODELS
+CORE --> MODELS
+MODELS --> DB
+@enduml
+
+
+@startuml WMS_DataModel
+' Diagram 3 — ERD / Data Model (kelas)
+skinparam classAttributeIconSize 0
+hide circle
+
+class User {
+  +id
+  +username
+  +full_name
+  +password_hash
+  +active
+  +deleted
+}
+class Role {
+  +id
+  +code
+  +name
+}
+class UserRole {
+  +user_id
+  +role_id
+}
+class Warehouse {
+  +id
+  +code
+  +name
+  +type
+  +sto_enabled
+  +active
+}
+class Locator {
+  +id
+  +warehouse_id
+  +code
+  +zone
+  +rack
+  +level
+  +verification_status
+}
+class Item {
+  +id
+  +code
+  +name
+  +uom
+  +barcode
+  +qr_code
+  +active
+}
+class ItemWarehouse {
+  +item_id
+  +warehouse_id
+}
+class StockMovement {
+  +id
+  +movement_no
+  +movement_type
+  +warehouse_id
+  +item_id
+  +qty
+  +from_locator_id
+  +to_locator_id
+  +ref_type
+  +ref_no
+  +client_txn_id
+  +voided
+  +corrects_movement_id
+}
+class SyncTransaction {
+  +id
+  +txn_id
+  +user_id
+  +txn_type
+  +result
+  +message
+}
+class Message {
+  +id
+  +sender_id
+  +title
+  +body
+  +level
+  +target_role
+  +active
+}
+class MessageRead {
+  +message_id
+  +user_id
+  +read_at
+}
+class StockOpname {
+  +id
+  +sto_number
+  +sto_date
+  +warehouse_id
+  +status
+}
+class StoAssignment {
+  +id
+  +sto_id
+  +counter_id
+  +checker_id
+}
+class StoLocator {
+  +id
+  +sto_id
+  +locator_id
+  +counter_id
+  +checker_id
+  +status
+  +round
+}
+class StockCount {
+  +id
+  +sto_locator_id
+  +status
+}
+class StockCountDetail {
+  +id
+  +count_id
+  +item_id
+  +qty
+}
+class StockRecount {
+  +id
+  +sto_locator_id
+  +reason
+  +note
+}
+class AuditLog {
+  +id
+  +user_id
+  +action
+  +object_type
+  +object_id
+  +ip
+}
+
+User "1" -- "0..*" UserRole
+Role "1" -- "0..*" UserRole
+User "1" -- "0..*" StockMovement : membuat
+User "1" -- "0..*" AuditLog
+User "1" -- "0..*" SyncTransaction
+User "1" -- "0..*" Message : mengirim
+User "1" -- "0..*" MessageRead
+Message "1" -- "0..*" MessageRead
+
+Warehouse "1" -- "0..*" Locator
+Warehouse "1" -- "0..*" ItemWarehouse
+Item "1" -- "0..*" ItemWarehouse
+Warehouse "1" -- "0..*" StockMovement
+Item "1" -- "0..*" StockMovement
+Locator "1" -- "0..*" StockMovement : dari
+Locator "1" -- "0..*" StockMovement : ke
+
+Warehouse "1" -- "0..*" StockOpname
+StockOpname "1" -- "0..*" StoAssignment
+StockOpname "1" -- "0..*" StoLocator
+Locator "1" -- "0..*" StoLocator
+StoLocator "1" -- "0..*" StockCount
+StockCount "1" -- "0..*" StockCountDetail
+Item "1" -- "0..*" StockCountDetail
+StoLocator "1" -- "0..*" StockRecount
+
+note right of StockMovement
+  LEDGER append-only.
+  Saldo = SUM(masuk) - SUM(keluar)
+  di luar baris voided.
+end note
+@enduml
+
+
+@startuml WMS_StateSTO
+' Diagram 4a — State STO
+[*] --> DRAFT
+DRAFT --> OPEN
+DRAFT --> CANCELLED
+OPEN --> COUNTING
+OPEN --> CANCELLED
+COUNTING --> CHECKING
+COUNTING --> CANCELLED
+CHECKING --> RECONCILIATION
+CHECKING --> COUNTING
+CHECKING --> CANCELLED
+RECONCILIATION --> COMPLETED
+RECONCILIATION --> CHECKING
+RECONCILIATION --> CANCELLED
+COMPLETED --> [*]
+CANCELLED --> [*]
+note right of RECONCILIATION
+  Gate: semua lokator ACCEPTED
+  dan issues == 0 (kecuali force).
+end note
+@enduml
+
+
+@startuml WMS_StateLocator
+' Diagram 4b — State StoLocator
+[*] --> NOT_STARTED
+NOT_STARTED --> IN_PROGRESS : MH tambah baris
+IN_PROGRESS --> IN_PROGRESS : MH tambah baris
+IN_PROGRESS --> WAITING_CHECK : MH selesai
+WAITING_CHECK --> ACCEPTED : Checker terima
+WAITING_CHECK --> RECOUNT : Checker minta ulang
+RECOUNT --> IN_PROGRESS : MH hitung ulang
+ACCEPTED --> [*]
+@enduml
+
+
+@startuml WMS_SeqTransaksi
+' Diagram 5 — Sequence transaksi barang (offline-first)
+actor MH
+participant "Mobile PWA" as App
+participant "IndexedDB" as IDB
+participant "FastAPI /api/m" as API
+participant "services/stock.py" as SVC
+database DB
+
+MH -> App : Scan item, pilih lokator, isi qty
+alt Online
+  App -> API : POST /api/m/{inbound|outbound|transfer}
+  API -> SVC : create_movement(...)
+  SVC -> DB : cek saldo + insert (satu transaksi)
+  alt saldo cukup
+    DB --> SVC : ok
+    SVC --> API : movement
+    API --> App : movement_no
+    App --> MH : Sukses
+  else akan minus
+    SVC --> API : 409 "saldo tersedia ..."
+    API --> App : error
+    App --> MH : Ditolak
+  end
+else Offline
+  App -> IDB : enqueue(client_txn_id, payload)
+  App --> MH : Tersimpan offline
+  note over App, IDB : Saat online -> flush()
+  App -> API : POST /api/m/sync [batch]
+  API -> DB : cek client_txn_id (idempoten)
+  API --> App : OK / DUPLICATE / REJECTED
+end
+@enduml
+
+
+@startuml WMS_SeqSTO
+' Diagram 6 — Sequence Stock Opname end-to-end
+actor "Supervisor/Admin" as SUP
+actor MH
+actor Checker as CHK
+participant "FastAPI" as API
+participant "services/counting|recon" as SVC
+database DB
+
+SUP -> API : POST /api/sto (assign counter+checker)
+SUP -> API : status OPEN
+SUP -> API : status COUNTING
+MH -> API : GET /api/m/sto/{id}
+MH -> API : POST .../lines (qty)
+API -> SVC : add_line (round-based)
+MH -> API : POST .../finish
+API -> DB : status WAITING_CHECK
+CHK -> API : POST .../accept (atau .../recount)
+API -> DB : status ACCEPTED
+SUP -> API : status CHECKING
+SUP -> API : status RECONCILIATION
+SUP -> API : GET /api/sto/{id}/reconciliation
+API -> SVC : compare(fisik vs ledger) on-the-fly
+SVC --> API : MATCH/VARIANCE/MISSING/UNEXPECTED
+CHK -> API : POST .../reconciliation/resolve
+API -> SVC : resolve -> create ADJUSTMENT
+SVC -> DB : insert STOCK_MOVEMENT (ADJUSTMENT)
+SUP -> API : status COMPLETED
+@enduml
+
+
+@startuml WMS_SeqPesan
+' Diagram 7 — Sequence pesan operator
+actor "Admin/Supervisor/Checker" as MGR
+actor MH
+participant "FastAPI" as API
+database DB
+
+MGR -> API : POST /api/messages (target_role, level, body)
+API -> DB : insert MESSAGE
+API --> MGR : ok
+MH -> API : GET /api/m/home
+API -> DB : inbox(user) + tasks
+API --> MH : messages + unread + tasks
+MH -> API : POST /api/m/messages/{id}/read
+API -> DB : insert MESSAGE_READ
+API --> MH : ok (unread berkurang)
+@enduml
+
+
+@startuml WMS_ActScan
+' Diagram 8 — Activity alur scan MH terpadu
+start
+:Mulai;
+if (Pilih jenis transaksi?) then (Masuk)
+  :Lokator tujuan;
+elseif (Keluar)
+  :Lokator asal;
+else (Pindah)
+  :Lokator asal + tujuan;
+endif
+:Scan / cari barang;
+:Input qty (keypad);
+:Pilih ref type/no + catatan;
+if (Online?) then (Ya)
+  :POST /api/m/...;
+  if (Valid?) then (Ya)
+    :Sukses + movement_no;
+  else (Tidak)
+    :Tolak: saldo tersedia;
+    stop
+  endif
+else (Tidak)
+  :Enqueue IndexedDB;
+  :Tersimpan offline;
+endif
+stop
+@enduml
+
+
+@startuml WMS_ActSync
+' Diagram 9 — Activity sinkronisasi offline
+start
+:flush;
+while (Ada antrean?) is (Ya)
+  :POST /api/m/sync atau /api/m/sto/sync;
+  if (Hasil per txn) then (OK / DUPLICATE)
+    :Hapus dari antrean;
+  else (REJECTED)
+    :Tandai ditolak + pesan;
+  endif
+endwhile (Tidak)
+if (Ada yang ditolak?) then (Ya)
+  :Retry / Discard oleh MH;
+endif
+stop
+@enduml
+
+
+@startuml WMS_Deployment
+' Diagram 10 — Deployment (Docker)
+skinparam componentStyle rectangle
+
+node "Perangkat Pengguna" {
+  [Browser Mobile (MH / PWA)] as B1
+  [Browser Desktop (manajer)] as B2
+}
+
+node "Docker Host" {
+  node "Container: sto-pp2-app-new" {
+    [Uvicorn + FastAPI :8000] as UVI
+    [StaticFiles /app/frontend] as STAT
+  }
+  database "Volume sto-pp2-data\n/app/backend/data\n(sto.db + log)" as VOL
+}
+
+B1 --> UVI : HTTP :APP_PORT
+B2 --> UVI : HTTP :APP_PORT
+UVI --> STAT
+UVI --> VOL
+@enduml
