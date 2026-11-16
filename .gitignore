@@ -28,6 +28,10 @@ backend/data/
 .idea/
 .DS_Store
 Thumbs.db
+.vscode-server
+research_doc.txt
+docker-compose.yml
+Dockerfile
 
 # Test & Coverage
 .pytest_cache/
